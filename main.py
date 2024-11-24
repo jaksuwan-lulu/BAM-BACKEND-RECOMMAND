@@ -19,6 +19,7 @@ app.include_router(recommendation.router, prefix="/recommendation", tags=["Recom
 app.add_exception_handler(HTTPException, http_error_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8000)
