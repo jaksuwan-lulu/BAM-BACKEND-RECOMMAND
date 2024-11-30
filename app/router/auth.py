@@ -1,11 +1,10 @@
-from fastapi import APIRouter, HTTPException, Depends, Form, Response
+from fastapi import APIRouter, HTTPException, Depends, Form, Response, Request
 from pydantic import BaseModel
 from passlib.context import CryptContext
 from app.database.database import get_database
 from app.utils.jwt_handler import create_access_token, create_refresh_token, verify_access_token
 from datetime import datetime
 from fastapi.security import OAuth2PasswordBearer
-import uuid
 from app.models.models import BlacklistToken
 
 router = APIRouter()
@@ -20,9 +19,6 @@ class UserRegister(BaseModel):
     name: str
     surname: str
     number: str = None
-
-class TokenRefreshRequest(BaseModel):
-    refresh_token: str
 
 @router.post("/register")
 async def register(user: UserRegister):
@@ -55,14 +51,14 @@ async def login(response: Response, email: str = Form(...), password: str = Form
         key="access_token",
         value=access_token,
         httponly=True,
-        secure=True,  # ใช้ secure=True หากคุณใช้ HTTPS
+        secure=False,  # ใช้ secure=True หากใช้งานผ่าน HTTPS
         samesite="Lax"
     )
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=True,
+        secure=False,
         samesite="Lax"
     )
     
@@ -84,14 +80,34 @@ async def logout(response: Response, token: str = Depends(oauth2_scheme)):
 
     return {"message": "User has been logged out successfully"}
 
+@router.post("/token")
+async def token(username: str = Form(...), password: str = Form(...)):
+    db_user = db['users'].find_one({"email": username})
+    if not db_user or not pwd_context.verify(password, db_user["password"]):
+        raise HTTPException(status_code=400, detail="Incorrect username or password")
+
+    # สร้าง access token และ refresh token
+    access_token = create_access_token(data={"sub": db_user["email"]})
+    refresh_token = create_refresh_token(data={"sub": db_user["email"]})
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
+
 @router.post("/refresh-token")
-async def refresh_token(response: Response, token: str = Depends(oauth2_scheme)):
-    payload = verify_access_token(token)
+async def refresh_token(response: Response, request: Request):
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="Refresh token is missing")
+    
+    payload = verify_access_token(refresh_token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
     user_email = payload['sub']
-
+    
     # สร้าง access token และ refresh token ใหม่
     new_access_token = create_access_token(data={"sub": user_email})
     new_refresh_token = create_refresh_token(data={"sub": user_email})
@@ -101,14 +117,14 @@ async def refresh_token(response: Response, token: str = Depends(oauth2_scheme))
         key="access_token",
         value=new_access_token,
         httponly=True,
-        secure=True,
+        secure=False,
         samesite="Lax"
     )
     response.set_cookie(
         key="refresh_token",
         value=new_refresh_token,
         httponly=True,
-        secure=True,
+        secure=False,
         samesite="Lax"
     )
 

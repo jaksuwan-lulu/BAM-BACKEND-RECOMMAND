@@ -1,16 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException
-from pymongo import MongoClient
-from app.utils.jwt_handler import verify_access_token
+from fastapi import APIRouter, Depends, HTTPException, Request
+from app.utils.jwt_handler import verify_access_token_from_cookie
 from app.database.database import get_database
-from fastapi.security import OAuth2PasswordBearer
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
+from app.models.models import FavoriteHouses
 
 router = APIRouter()
+
 db = get_database()  # ดึงฐานข้อมูลจาก get_database()
 
 @router.get("/")
 async def get_houses(db=Depends(get_database)):
+    """
+    ดึงข้อมูลบ้านทั้งหมดจาก collection preProcessed_500
+    """
     houses_cursor = db["preProcessed_500"].find()
     houses = []
     for house in houses_cursor:
@@ -20,6 +21,9 @@ async def get_houses(db=Depends(get_database)):
 
 @router.get("/search")
 async def search_houses(query: str, db=Depends(get_database)):
+    """
+    ค้นหาบ้านตามชื่อโครงการ (asset_project_name)
+    """
     houses = db['preProcessed_500'].find({"asset_project_name": {"$regex": query, "$options": "i"}})
     
     result = []
@@ -29,11 +33,14 @@ async def search_houses(query: str, db=Depends(get_database)):
     return result
 
 @router.get("/getdetail")
-async def get_house_detail(house_id: str, db=Depends(get_database)):
+async def get_house_detail(request: Request, house_id: str, db=Depends(get_database)):
     """
-    รับ house_id จาก Frontend และส่งข้อมูลบ้านที่ตรงกับ house_id กลับไป
+    ดึงข้อมูลบ้านตาม house_id และตรวจสอบสิทธิ์ด้วย access_token จาก HTTP-only cookies
     """
-    house = db["preProcessed_500"].find_one({"id": house_id})  # ค้นหาโดย id
+    token_data = verify_access_token_from_cookie(request)
+    user_email = token_data["sub"]
+
+    house = db["preProcessed_500"].find_one({"id": house_id})
     if not house:
         raise HTTPException(status_code=404, detail="House not found")
 
