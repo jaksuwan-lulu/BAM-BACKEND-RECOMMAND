@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Form , Request
+from fastapi import APIRouter, HTTPException, Depends, Form, Response
 from pydantic import BaseModel
 from passlib.context import CryptContext
 from app.database.database import get_database
@@ -41,7 +41,7 @@ async def register(user: UserRegister):
     return {"message": "User created successfully"}
 
 @router.post("/login")
-async def login(email: str = Form(...), password: str = Form(...)):
+async def login(response: Response, email: str = Form(...), password: str = Form(...)):
     db_user = db['users'].find_one({"email": email})
     if not db_user or not pwd_context.verify(password, db_user["password"]):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
@@ -50,15 +50,26 @@ async def login(email: str = Form(...), password: str = Form(...)):
     access_token = create_access_token(data={"sub": db_user["email"]})
     refresh_token = create_refresh_token(data={"sub": db_user["email"]})
     
-    return {
-        "message": "Login successful",
-        "access_token": access_token,
-        "refresh_token": refresh_token,  # เพิ่ม refresh token ใน response
-        "token_type": "bearer"
-    }
+    # ตั้งค่า HTTP-only cookies
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=True,  # ใช้ secure=True หากคุณใช้ HTTPS
+        samesite="Lax"
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="Lax"
+    )
+    
+    return {"message": "Login successful"}
 
 @router.post("/logout")
-async def logout(token: str = Depends(oauth2_scheme)):
+async def logout(response: Response, token: str = Depends(oauth2_scheme)):
     token_data = verify_access_token(token)
     if not token_data:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
@@ -67,27 +78,15 @@ async def logout(token: str = Depends(oauth2_scheme)):
     blacklist_entry = BlacklistToken(token_key=token, is_logout=True)
     blacklist_entry.save()
 
+    # ลบ cookies
+    response.delete_cookie(key="access_token")
+    response.delete_cookie(key="refresh_token")
+
     return {"message": "User has been logged out successfully"}
 
-@router.post("/token")
-async def token(username: str = Form(...), password: str = Form(...)):
-    db_user = db['users'].find_one({"email": username})
-    if not db_user or not pwd_context.verify(password, db_user["password"]):
-        raise HTTPException(status_code=400, detail="Incorrect username or password")
-
-    access_token = create_access_token(data={"sub": db_user["email"], "unique_id": str(uuid.uuid4())})
-    refresh_token = create_refresh_token(data={"sub": db_user["email"], "unique_id": str(uuid.uuid4())})
-    
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer"
-    }
-
-
 @router.post("/refresh-token")
-async def refresh_token(request: TokenRefreshRequest):
-    payload = verify_access_token(request.refresh_token)  # แก้ไขให้เหลือ argument เดียว
+async def refresh_token(response: Response, token: str = Depends(oauth2_scheme)):
+    payload = verify_access_token(token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
@@ -97,8 +96,20 @@ async def refresh_token(request: TokenRefreshRequest):
     new_access_token = create_access_token(data={"sub": user_email})
     new_refresh_token = create_refresh_token(data={"sub": user_email})
 
-    return {
-        "access_token": new_access_token,
-        "refresh_token": new_refresh_token,
-        "token_type": "bearer"
-    }
+    # ตั้งค่า HTTP-only cookies ใหม่
+    response.set_cookie(
+        key="access_token",
+        value=new_access_token,
+        httponly=True,
+        secure=True,
+        samesite="Lax"
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=new_refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="Lax"
+    )
+
+    return {"message": "Tokens refreshed successfully"}
