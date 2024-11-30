@@ -65,20 +65,20 @@ async def login(response: Response, email: str = Form(...), password: str = Form
     return {"message": "Login successful"}
 
 @router.post("/logout")
-async def logout(response: Response, token: str = Depends(oauth2_scheme)):
-    token_data = verify_access_token(token)
-    if not token_data:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    
-    # บันทึก token ลงใน blacklist
-    blacklist_entry = BlacklistToken(token_key=token, is_logout=True)
-    blacklist_entry.save()
+async def logout(response: Response, request: Request):
+    token = request.cookies.get("access_token")
+    if token:
+        # เพิ่ม Token ใน Blacklist
+        blacklist_entry = BlacklistToken(token_key=token, is_logout=True)
+        blacklist_entry.save()
 
-    # ลบ cookies
-    response.delete_cookie(key="access_token")
-    response.delete_cookie(key="refresh_token")
+        # ลบ Cookies
+        response.delete_cookie(key="access_token")
+        response.delete_cookie(key="refresh_token")
 
-    return {"message": "User has been logged out successfully"}
+        return {"message": "User has been logged out successfully"}
+
+    raise HTTPException(status_code=401, detail="Access token is missing")
 
 @router.post("/token")
 async def token(username: str = Form(...), password: str = Form(...)):
