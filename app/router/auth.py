@@ -1,15 +1,13 @@
-from fastapi import APIRouter, HTTPException, Depends, Form, Response, Request
+from fastapi import APIRouter, HTTPException, Response, Request, Depends
 from pydantic import BaseModel
 from passlib.context import CryptContext
 from app.database.database import get_database
 from app.utils.jwt_handler import create_access_token, create_refresh_token, verify_access_token
-from datetime import datetime
-from fastapi.security import OAuth2PasswordBearer
 from app.models.models import BlacklistToken
+from datetime import datetime
 
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 db = get_database()
 
@@ -75,7 +73,6 @@ async def logout(response: Response, request: Request):
     if not token:
         raise HTTPException(status_code=401, detail="Access token is missing or invalid")
 
-    # ตรวจสอบว่ามี token ใน cookies หรือไม่
     try:
         # เพิ่ม token ลงใน Blacklist (หรือจัดการตามการออกแบบระบบ)
         blacklist_entry = BlacklistToken(token_key=token, is_logout=True)
@@ -90,53 +87,32 @@ async def logout(response: Response, request: Request):
         # ในกรณีที่เกิดปัญหา ให้ส่งกลับ error
         raise HTTPException(status_code=500, detail=f"Logout failed: {str(e)}")
 
-
-@router.post("/token")
-async def token(username: str = Form(...), password: str = Form(...)):
-    db_user = db['users'].find_one({"email": username})
-    if not db_user or not pwd_context.verify(password, db_user["password"]):
-        raise HTTPException(status_code=400, detail="Incorrect username or password")
-
-    # สร้าง access token และ refresh token
-    access_token = create_access_token(data={"sub": db_user["email"]})
-    refresh_token = create_refresh_token(data={"sub": db_user["email"]})
-
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer"
-    }
-
-@router.post("/refresh-token")
-async def refresh_token(response: Response, request: Request):
+# Middleware or helper for handling refresh token when access token expired
+@router.get("/protected-resource")
+async def protected_resource(request: Request, response: Response):
+    access_token = request.cookies.get("access_token")
     refresh_token = request.cookies.get("refresh_token")
-    if not refresh_token:
-        raise HTTPException(status_code=401, detail="Refresh token is missing")
-    
-    payload = verify_access_token(refresh_token)
-    if not payload:
-        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
-    user_email = payload['sub']
-    
-    # สร้าง access token และ refresh token ใหม่
-    new_access_token = create_access_token(data={"sub": user_email})
-    new_refresh_token = create_refresh_token(data={"sub": user_email})
+    # ตรวจสอบ access token
+    payload = verify_access_token(access_token, raise_expired=True)
+    if not payload:  # ถ้า access token หมดอายุ
+        if not refresh_token:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        
+        # ตรวจสอบ refresh token และสร้าง access token ใหม่
+        refresh_payload = verify_access_token(refresh_token)
+        if not refresh_payload:
+            raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+        
+        new_access_token = create_access_token(data={"sub": refresh_payload["sub"]})
+        response.set_cookie(
+            key="access_token",
+            value=new_access_token,
+            httponly=True,
+            secure=False,
+            samesite="Lax"
+        )
+        return {"message": "Access token refreshed"}
 
-    # ตั้งค่า HTTP-only cookies ใหม่
-    response.set_cookie(
-        key="access_token",
-        value=new_access_token,
-        httponly=True,
-        secure=False,
-        samesite="Lax"
-    )
-    response.set_cookie(
-        key="refresh_token",
-        value=new_refresh_token,
-        httponly=True,
-        secure=False,
-        samesite="Lax"
-    )
-
-    return {"message": "Tokens refreshed successfully"}
+    # ถ้า access token ยังใช้งานได้
+    return {"message": "Protected resource accessed"}
