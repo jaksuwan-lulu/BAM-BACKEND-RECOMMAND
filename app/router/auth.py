@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException, Response, Request
+from fastapi import APIRouter, HTTPException, Response, Request, Depends
 from pydantic import BaseModel
 from passlib.context import CryptContext
 from app.database.database import get_database
 from app.utils.jwt_handler import create_access_token, create_refresh_token, verify_access_token
+from app.models.models import BlacklistToken
 from datetime import datetime
 
 router = APIRouter()
@@ -52,94 +53,69 @@ async def login(response: Response, request: LoginRequest):
         key="access_token",
         value=access_token,
         httponly=True,
-        secure=False,
-        samesite="Lax"
+        secure=True,  # ต้องเป็น True ถ้าใช้ HTTPS
+        samesite="None"  # ใช้ None ถ้า frontend และ backend อยู่คนละ domain
     )
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=False,
-        samesite="Lax"
+        secure=True,  # ต้องเป็น True ถ้าใช้ HTTPS
+        samesite="None"
     )
 
     return {"message": "Login successful"}
 
 @router.post("/logout")
 async def logout(response: Response, request: Request):
-    # ดึง HTTP-only access token จาก cookies
     token = request.cookies.get("access_token")
     if not token:
-        # หากไม่มี access token ใน cookies ให้แจ้งว่าไม่อนุญาต
         raise HTTPException(status_code=401, detail="Access token is missing or invalid")
 
-    # ตรวจสอบว่า token ถูกต้องหรือไม่
     try:
         payload = verify_access_token(token)
-        if not payload:
-            raise HTTPException(status_code=401, detail="Invalid access token")
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
-    try:
-        # เพิ่ม token ลงใน Blacklist
-        blacklist_entry = {
-            "token_key": token,
-            "is_logout": True,
-            "updated_time": datetime.utcnow()  # ใช้เวลา UTC
-        }
-        db["blacklist_token"].insert_one(blacklist_entry)
+    blacklist_entry = {
+        "token_key": token,
+        "is_logout": True,
+        "updated_time": datetime.utcnow()
+    }
+    db["blacklist_token"].insert_one(blacklist_entry)
 
-        # ลบ cookies ทั้ง access token และ refresh token
-        response.delete_cookie(key="access_token", httponly=True)
-        response.delete_cookie(key="refresh_token", httponly=True)
+    response.delete_cookie(key="access_token", httponly=True, samesite="None")
+    response.delete_cookie(key="refresh_token", httponly=True, samesite="None")
 
-        return {"message": "User has been logged out successfully"}
-    except Exception as e:
-        # กรณีที่เพิ่ม token ลง blacklist ไม่สำเร็จ
-        raise HTTPException(status_code=500, detail=f"Logout failed: {str(e)}")
+    return {"message": "User has been logged out successfully"}
 
 @router.get("/status")
 async def get_status(request: Request):
-    """
-    ตรวจสอบสถานะการเข้าสู่ระบบของผู้ใช้
-    """
-    # ดึง access_token จาก Cookies
     token = request.cookies.get("access_token")
-    
     if not token:
-        # ถ้าไม่มี Token ใน Cookies: ถือว่า Logout
         return {"status": "logged_out", "message": "No access token found."}
 
-    # ตรวจสอบว่า Token อยู่ใน Blacklist หรือไม่
     blacklisted_token = db["blacklist_token"].find_one({"token_key": token})
     if blacklisted_token:
         return {"status": "logged_out", "message": "Token has been revoked."}
 
     try:
-        # ตรวจสอบความถูกต้องของ Token
         payload = verify_access_token(token)
         return {"status": "logged_in", "user": payload["sub"]}
     except HTTPException as e:
-        # Token ไม่ถูกต้อง หรือ หมดอายุ
         return {"status": "logged_out", "message": str(e)}
     except Exception as e:
-        # กรณีอื่น ๆ เช่น Unexpected Error
         return {"status": "error", "message": f"Unexpected error: {str(e)}"}
 
-# Middleware or helper for handling refresh token when access token expired
 @router.get("/protected-resource")
 async def protected_resource(request: Request):
-    # ดึง access_token จาก Cookies
     access_token = request.cookies.get("access_token")
     if not access_token:
         raise HTTPException(status_code=401, detail="Access token is missing")
 
     try:
-        # เรียก verify_access_token โดยไม่ใช้อาร์กิวเมนต์ raise_expired
         payload = verify_access_token(access_token)
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
-    # ใช้ payload ที่ตรวจสอบแล้ว
     return {"message": "You have accessed a protected resource", "user": payload["sub"]}
