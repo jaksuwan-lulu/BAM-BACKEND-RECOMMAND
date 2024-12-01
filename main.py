@@ -25,7 +25,7 @@ app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(user.router, prefix="/users", tags=["Users"])
 app.include_router(house.router, prefix="/house", tags=["Houses"])
 app.include_router(recommendation.router, prefix="/recommendation", tags=["Recommendations"])
-app.include_router(visited_pages.router, prefix="/visited_pages", tags=["Visited Pages"])
+# app.include_router(visited_pages.router, prefix="/visited_pages", tags=["Visited Pages"])
 
 # เพิ่มตัวจัดการข้อผิดพลาด
 app.add_exception_handler(HTTPException, http_error_handler)
