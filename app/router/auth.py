@@ -103,30 +103,17 @@ async def logout(response: Response, request: Request):
 
 # Middleware or helper for handling refresh token when access token expired
 @router.get("/protected-resource")
-async def protected_resource(request: Request, response: Response):
+async def protected_resource(request: Request):
+    # ดึง access_token จาก Cookies
     access_token = request.cookies.get("access_token")
-    refresh_token = request.cookies.get("refresh_token")
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Access token is missing")
 
-    # ตรวจสอบ access token
-    payload = verify_access_token(access_token, raise_expired=True)
-    if not payload:  # ถ้า access token หมดอายุ
-        if not refresh_token:
-            raise HTTPException(status_code=401, detail="Authentication required")
-        
-        # ตรวจสอบ refresh token และสร้าง access token ใหม่
-        refresh_payload = verify_access_token(refresh_token)
-        if not refresh_payload:
-            raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
-        
-        new_access_token = create_access_token(data={"sub": refresh_payload["sub"]})
-        response.set_cookie(
-            key="access_token",
-            value=new_access_token,
-            httponly=True,
-            secure=False,
-            samesite="Lax"
-        )
-        return {"message": "Access token refreshed"}
+    try:
+        # เรียก verify_access_token โดยไม่ใช้อาร์กิวเมนต์ raise_expired
+        payload = verify_access_token(access_token)
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
-    # ถ้า access token ยังใช้งานได้
-    return {"message": "Protected resource accessed"}
+    # ใช้ payload ที่ตรวจสอบแล้ว
+    return {"message": "You have accessed a protected resource", "user": payload["sub"]}
