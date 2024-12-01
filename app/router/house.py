@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from app.utils.jwt_handler import verify_access_token_from_cookie
+# from app.utils.jwt_handler import verify_access_token_from_cookie
 from app.database.database import get_database
 from app.models.models import FavoriteHouses
 import logging

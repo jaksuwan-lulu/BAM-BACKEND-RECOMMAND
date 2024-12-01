@@ -1,9 +1,8 @@
-from fastapi import APIRouter, HTTPException, Response, Request, Depends
+from fastapi import APIRouter, HTTPException, Response, Request
 from pydantic import BaseModel
 from passlib.context import CryptContext
 from app.database.database import get_database
 from app.utils.jwt_handler import create_access_token, create_refresh_token, verify_access_token
-from app.models.models import BlacklistToken
 from datetime import datetime
 
 router = APIRouter()
@@ -100,6 +99,33 @@ async def logout(response: Response, request: Request):
         # กรณีที่เพิ่ม token ลง blacklist ไม่สำเร็จ
         raise HTTPException(status_code=500, detail=f"Logout failed: {str(e)}")
 
+@router.get("/status")
+async def get_status(request: Request):
+    """
+    ตรวจสอบสถานะการเข้าสู่ระบบของผู้ใช้
+    """
+    # ดึง access_token จาก Cookies
+    token = request.cookies.get("access_token")
+    
+    if not token:
+        # ถ้าไม่มี Token ใน Cookies: ถือว่า Logout
+        return {"status": "logged_out", "message": "No access token found."}
+
+    # ตรวจสอบว่า Token อยู่ใน Blacklist หรือไม่
+    blacklisted_token = db["blacklist_token"].find_one({"token_key": token})
+    if blacklisted_token:
+        return {"status": "logged_out", "message": "Token has been revoked."}
+
+    try:
+        # ตรวจสอบความถูกต้องของ Token
+        payload = verify_access_token(token)
+        return {"status": "logged_in", "user": payload["sub"]}
+    except HTTPException as e:
+        # Token ไม่ถูกต้อง หรือ หมดอายุ
+        return {"status": "logged_out", "message": str(e)}
+    except Exception as e:
+        # กรณีอื่น ๆ เช่น Unexpected Error
+        return {"status": "error", "message": f"Unexpected error: {str(e)}"}
 
 # Middleware or helper for handling refresh token when access token expired
 @router.get("/protected-resource")
@@ -117,4 +143,3 @@ async def protected_resource(request: Request):
 
     # ใช้ payload ที่ตรวจสอบแล้ว
     return {"message": "You have accessed a protected resource", "user": payload["sub"]}
-
