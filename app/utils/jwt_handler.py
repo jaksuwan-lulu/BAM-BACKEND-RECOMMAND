@@ -41,16 +41,29 @@ def create_refresh_token(data: dict, expires_delta: timedelta = timedelta(minute
 
 # ตรวจสอบ Access Token
 def verify_access_token(token: str):
+    """
+    ตรวจสอบความถูกต้องของ access token
+    """
     try:
+        # ตรวจสอบว่า token อยู่ใน Blacklist หรือไม่
         if is_token_blacklisted(token):
             raise HTTPException(status_code=401, detail="Token has been revoked")
         
+        # ถอดรหัสและตรวจสอบ JWT token
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.InvalidSignatureError:
+        raise HTTPException(status_code=401, detail="Token signature is invalid")
+    except jwt.DecodeError:
+        raise HTTPException(status_code=401, detail="Token decoding failed")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
+    except Exception as e:
+        # จัดการข้อผิดพลาดที่ไม่ได้คาดการณ์ไว้
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
 
 # ตรวจสอบ Access Token จาก HTTP-only Cookie
 def verify_access_token_from_cookie(request: Request):
