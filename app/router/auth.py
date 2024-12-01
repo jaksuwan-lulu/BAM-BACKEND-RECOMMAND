@@ -117,3 +117,4 @@ async def protected_resource(request: Request):
 
     # ใช้ payload ที่ตรวจสอบแล้ว
     return {"message": "You have accessed a protected resource", "user": payload["sub"]}
+
