@@ -71,12 +71,25 @@ async def logout(response: Response, request: Request):
     # ดึง HTTP-only access token จาก cookies
     token = request.cookies.get("access_token")
     if not token:
+        # หากไม่มี access token ใน cookies ให้แจ้งว่าไม่อนุญาต
         raise HTTPException(status_code=401, detail="Access token is missing or invalid")
 
+    # ตรวจสอบว่า token ถูกต้องหรือไม่
     try:
-        # เพิ่ม token ลงใน Blacklist (หรือจัดการตามการออกแบบระบบ)
-        blacklist_entry = BlacklistToken(token_key=token, is_logout=True)
-        blacklist_entry.save()
+        payload = verify_access_token(token)
+        if not payload:
+            raise HTTPException(status_code=401, detail="Invalid access token")
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+
+    try:
+        # เพิ่ม token ลงใน Blacklist
+        blacklist_entry = {
+            "token_key": token,
+            "is_logout": True,
+            "updated_time": datetime.utcnow()  # ใช้เวลา UTC
+        }
+        db["blacklist_token"].insert_one(blacklist_entry)
 
         # ลบ cookies ทั้ง access token และ refresh token
         response.delete_cookie(key="access_token", httponly=True)
@@ -84,8 +97,9 @@ async def logout(response: Response, request: Request):
 
         return {"message": "User has been logged out successfully"}
     except Exception as e:
-        # ในกรณีที่เกิดปัญหา ให้ส่งกลับ error
+        # กรณีที่เพิ่ม token ลง blacklist ไม่สำเร็จ
         raise HTTPException(status_code=500, detail=f"Logout failed: {str(e)}")
+
 
 # Middleware or helper for handling refresh token when access token expired
 @router.get("/protected-resource")
