@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from app.utils.jwt_handler import verify_access_token_from_cookie
 from app.database.database import get_database
 from app.models.models import FavoriteHouses
+import logging
 
 router = APIRouter()
 
@@ -33,23 +34,26 @@ async def search_houses(query: str, db=Depends(get_database)):
     return result
 
 @router.get("/getdetail")
-async def get_house_detail(request: Request, house_id: str, db=Depends(get_database)):
-    """
-    ดึงข้อมูลบ้านตาม house_id (asset_id) และตรวจสอบสิทธิ์ด้วย access_token จาก HTTP-only cookies
-    """
-    try:
-        token_data = verify_access_token_from_cookie(request)
-        user_email = token_data.get("sub")
-        print(f"User email: {user_email} is requesting house details.")
-    except Exception:
-        print("Request by guest user.")  # Debug log
+async def get_house_detail(asset_id: str, db=Depends(get_database)):
+    logging.info(f"Received request with asset_id: {asset_id}")
 
-    # เปลี่ยนฟิลด์จาก id เป็น asset_id
-    house = db["preProcessed_500"].find_one({"asset_id": house_id})
+    try:
+        # Query จาก MongoDB
+        house = db["preProcessed_500"].find_one({"asset_id": asset_id})
+        logging.info(f"Query result: {house}")
+    except Exception as e:
+        logging.error(f"Database query failed: {e}")
+        raise HTTPException(status_code=500, detail="Database query failed")
+
+    # กรณีไม่พบบ้าน
     if not house:
-        print(f"House with asset_id {house_id} not found in the database.")  # Debug log
+        logging.warning(f"No document found with asset_id: {asset_id}")
         raise HTTPException(status_code=404, detail="House not found")
 
-    del house['_id']  # ลบฟิลด์ _id ออกเพื่อหลีกเลี่ยงข้อผิดพลาด serialization
+    # ลบ `_id` ก่อนส่งกลับ
+    if "_id" in house:
+        del house["_id"]
+
+    logging.info(f"Returning house details: {house}")
     return house
 

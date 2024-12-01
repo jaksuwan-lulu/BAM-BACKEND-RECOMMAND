@@ -36,22 +36,26 @@ async def register(user: UserRegister):
     db['users'].insert_one(new_user)
     return {"message": "User created successfully"}
 
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
 @router.post("/login")
-async def login(response: Response, email: str = Form(...), password: str = Form(...)):
-    db_user = db['users'].find_one({"email": email})
-    if not db_user or not pwd_context.verify(password, db_user["password"]):
+async def login(response: Response, request: LoginRequest):
+    db_user = db['users'].find_one({"email": request.email})
+    if not db_user or not pwd_context.verify(request.password, db_user["password"]):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
     
     # สร้าง access token และ refresh token
     access_token = create_access_token(data={"sub": db_user["email"]})
     refresh_token = create_refresh_token(data={"sub": db_user["email"]})
-    
+
     # ตั้งค่า HTTP-only cookies
     response.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
-        secure=False,  # ใช้ secure=True หากใช้งานผ่าน HTTPS
+        secure=False,
         samesite="Lax"
     )
     response.set_cookie(
@@ -61,24 +65,31 @@ async def login(response: Response, email: str = Form(...), password: str = Form
         secure=False,
         samesite="Lax"
     )
-    
+
     return {"message": "Login successful"}
 
 @router.post("/logout")
 async def logout(response: Response, request: Request):
+    # ดึง HTTP-only access token จาก cookies
     token = request.cookies.get("access_token")
-    if token:
-        # เพิ่ม Token ใน Blacklist
+    if not token:
+        raise HTTPException(status_code=401, detail="Access token is missing or invalid")
+
+    # ตรวจสอบว่ามี token ใน cookies หรือไม่
+    try:
+        # เพิ่ม token ลงใน Blacklist (หรือจัดการตามการออกแบบระบบ)
         blacklist_entry = BlacklistToken(token_key=token, is_logout=True)
         blacklist_entry.save()
 
-        # ลบ Cookies
-        response.delete_cookie(key="access_token")
-        response.delete_cookie(key="refresh_token")
+        # ลบ cookies ทั้ง access token และ refresh token
+        response.delete_cookie(key="access_token", httponly=True)
+        response.delete_cookie(key="refresh_token", httponly=True)
 
         return {"message": "User has been logged out successfully"}
+    except Exception as e:
+        # ในกรณีที่เกิดปัญหา ให้ส่งกลับ error
+        raise HTTPException(status_code=500, detail=f"Logout failed: {str(e)}")
 
-    raise HTTPException(status_code=401, detail="Access token is missing")
 
 @router.post("/token")
 async def token(username: str = Form(...), password: str = Form(...)):
