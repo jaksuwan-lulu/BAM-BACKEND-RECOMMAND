@@ -62,11 +62,9 @@ async def toggle_favorite(request: Request, asset_id: str, db=Depends(get_databa
     existing_favorite = db['favorite'].find_one({"email": user_email, "asset_id": asset_id})
 
     if existing_favorite:
-        # ถ้ามีอยู่แล้ว ให้ลบรายการออก
         db['favorite'].delete_one({"email": user_email, "asset_id": asset_id})
         return {"message": "House removed from favorite list"}
     else:
-        # ถ้าไม่มี ให้เพิ่มรายการใหม่
         favorite = {
             "email": user_email,
             "asset_id": asset_id

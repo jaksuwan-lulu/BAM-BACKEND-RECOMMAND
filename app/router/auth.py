@@ -53,14 +53,14 @@ async def login(response: Response, request: LoginRequest):
         key="access_token",
         value=access_token,
         httponly=True,
-        secure=True,  # ต้องเป็น True ถ้าใช้ HTTPS
-        samesite="None"  # ใช้ None ถ้า frontend และ backend อยู่คนละ domain
+        secure=False,  
+        samesite="None"  
     )
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=True,  # ต้องเป็น True ถ้าใช้ HTTPS
+        secure=False,  
         samesite="None"
     )
 

@@ -1,7 +1,7 @@
 from datetime import datetime
 from app.database.database import get_database
 
-db = get_database()  # ใช้ฟังก์ชัน get_database()
+db = get_database() 
 
 # คลาสสำหรับการจัดการ FavoriteHouses
 class FavoriteHouses:

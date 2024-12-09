@@ -45,11 +45,8 @@ def verify_access_token(token: str):
     ตรวจสอบความถูกต้องของ access token
     """
     try:
-        # ตรวจสอบว่า token อยู่ใน Blacklist หรือไม่
         if is_token_blacklisted(token):
             raise HTTPException(status_code=401, detail="Token has been revoked")
-        
-        # ถอดรหัสและตรวจสอบ JWT token
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
     except jwt.ExpiredSignatureError:
@@ -61,7 +58,6 @@ def verify_access_token(token: str):
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
     except Exception as e:
-        # จัดการข้อผิดพลาดที่ไม่ได้คาดการณ์ไว้
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 

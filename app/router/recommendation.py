@@ -48,7 +48,7 @@ router = APIRouter()
 async def recommendation(predict_method: str, asset_id: str):
     endpoints = {
         'collaborative_filtering': 'http://localhost:8001/collaborative_filtering',
-        'assoc_rules': 'http://localhost:8001/assoc_rules',  # ตรวจสอบให้แน่ใจว่า path นี้ถูกต้อง
+        'assoc_rules': 'http://localhost:8001/assoc_rules', 
         'hybrid': 'http://localhost:8001/hybrid'
     }
 
@@ -61,7 +61,7 @@ async def recommendation(predict_method: str, asset_id: str):
                 endpoints[predict_method],
                 params={'latest_visited_asset_id': asset_id, 'user_id': 'example@example.com'}
             )
-            res.raise_for_status()  # เพิ่มการตรวจสอบสถานะ HTTP
+            res.raise_for_status()  
         except httpx.HTTPStatusError as exc:
             raise HTTPException(status_code=exc.response.status_code, detail=f"Error from recommendation service: {exc.response.text}")
         except Exception as e:
