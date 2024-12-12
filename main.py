@@ -27,3 +27,4 @@ app.include_router(recommendation.router, prefix="/recommendation", tags=["Recom
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="localhost", port=8000)
+    
