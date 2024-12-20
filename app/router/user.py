@@ -71,3 +71,35 @@ async def toggle_favorite(request: Request, asset_id: str, db=Depends(get_databa
         }
         db['favorite'].insert_one(favorite)
         return {"message": "House added to favorite list"}
+
+
+
+
+
+@router.get("/show-favorites")
+async def get_favorites(request: Request, db=Depends(get_database)):
+    """
+    แสดงรายการบ้านที่ผู้ใช้ได้เพิ่มไว้ในรายการโปรด
+    โดยดึงข้อมูลผู้ใช้จาก cookie
+    """
+    token_data = verify_access_token_from_cookie(request)
+    user_email = token_data['sub']
+
+    # ดึงรายการโปรดทั้งหมดของผู้ใช้จาก collection 'favorite'
+    favorites = db['favorite'].find({"email": user_email})
+    favorite_asset_ids = [fav['asset_id'] for fav in favorites]
+
+    # ดึงข้อมูลบ้านจาก collection 'preProcessed_500' โดยใช้ asset_ids
+    houses_cursor = db['preProcessed_500'].find({"asset_id": {"$in": favorite_asset_ids}})
+    houses = []
+    for house in houses_cursor:
+        houses.append({
+            "asset_id": house.get("asset_id"),
+            "asset_project_name": house.get("asset_project_name"),
+            "price": house.get("price"),
+            "provice": house.get("provice"),
+            "sub_district": house.get("sub_district")
+        })
+
+    return {"favorites": houses}
+

@@ -22,70 +22,74 @@ async def get_houses(db=Depends(get_database)):
 
 @router.get("/search")
 async def search_houses(
-    query: Optional[str] = None,
-    provice: Optional[str] = None,
+    asset_project_name: Optional[str] = None,
     asset_type: Optional[str] = None,
+    district: Optional[str] = None,
+    provice: Optional[str] = None,
+    sub_district: Optional[str] = None,
     min_price: Optional[int] = None,
     max_price: Optional[int] = None,
     db=Depends(get_database)
 ):
     """
-    ค้นหาบ้านตามเงื่อนไขที่กำหนด เช่น asset_id, asset_project_name, asset_type, no_of_rights_document,
-    address, provice, district, และ sub_district
+    ค้นหาบ้านตามเงื่อนไขที่กำหนด เช่น asset_project_name, asset_type, district, provice, และ sub_district
+    โดยแสดงเฉพาะข้อมูลที่ขึ้นต้นด้วยค่าที่กำหนด
     """
 
+    # เงื่อนไขการค้นหา
     search_conditions = {}
 
-
-    or_conditions = []
-    if query:
-        or_conditions.extend([
-            {"asset_id": {"$regex": query, "$options": "i"}}, 
-            {"asset_project_name": {"$regex": query, "$options": "i"}},
-            {"asset_type": {"$regex": query, "$options": "i"}},
-            {"no_of_rights_document": {"$regex": query, "$options": "i"}}, 
-            {"address": {"$regex": query, "$options": "i"}},
-            {"provice": {"$regex": provice, "$options": "i"}},
-            {"district": {"$regex": query, "$options": "i"}},
-            {"sub_district": {"$regex": query, "$options": "i"}}
-        ])
-    if or_conditions:
-        search_conditions["$or"] = or_conditions
-
-    if provice:
-        search_conditions["provice"] = {"$regex": provice, "$options": "i"}
+    if asset_project_name:
+        search_conditions["asset_project_name"] = {"$regex": f"^{asset_project_name}", "$options": "i"}
     if asset_type:
-        search_conditions["asset_type"] = {"$regex": asset_type, "$options": "i"}
+        search_conditions["asset_type"] = {"$regex": f"^{asset_type}", "$options": "i"}
+    if district:
+        search_conditions["district"] = {"$regex": f"^{district}", "$options": "i"}
+    if provice:
+        search_conditions["provice"] = {"$regex": f"^{provice}", "$options": "i"}
+    if sub_district:
+        search_conditions["sub_district"] = {"$regex": f"^{sub_district}", "$options": "i"}
 
+    # ใช้ projection เพื่อดึงเฉพาะฟิลด์ที่ต้องการ
+    projection = {
+        "asset_id": 1,  # เพิ่ม asset_id
+        "asset_project_name": 1,
+        "asset_type": 1,
+        "district": 1,
+        "provice": 1,
+        "sub_district": 1,
+        "price": 1
+    }
 
-    houses_cursor = db["preProcessed_500"].find(search_conditions)
-
+    # ค้นหาเอกสารใน MongoDB
+    houses_cursor = db["preProcessed_500"].find(search_conditions, projection)
 
     houses = []
     for house in houses_cursor:
         try:
-
+            # แปลง price เป็น integer
             price = int(house.get("price", "").replace(" บาท", "").replace(",", "").strip())
             house["price"] = price
         except (ValueError, AttributeError):
-
             continue
 
-
+        # กรองตามราคา
         if min_price is not None and price < min_price:
             continue
         if max_price is not None and price > max_price:
             continue
 
-
+        # ลบ `_id` ออก
         house.pop("_id", None)
         houses.append(house)
-
 
     if not houses:
         raise HTTPException(status_code=404, detail="ไม่พบผลลัพธ์")
 
     return {"results": houses}
+
+
+
 
 
 

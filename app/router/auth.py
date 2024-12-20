@@ -53,15 +53,15 @@ async def login(response: Response, request: LoginRequest):
         key="access_token",
         value=access_token,
         httponly=True,
-        secure=False,  
-        samesite="None"  
+        secure=False,  # ต้องเป็น True ถ้าใช้ HTTPS
+        # samesite="None"  # ใช้ None ถ้า frontend และ backend อยู่คนละ domain
     )
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=False,  
-        samesite="None"
+        secure=False,  # ต้องเป็น True ถ้าใช้ HTTPS
+        # samesite="None"
     )
 
     return {"message": "Login successful"}
@@ -70,13 +70,20 @@ async def login(response: Response, request: LoginRequest):
 async def logout(response: Response, request: Request):
     token = request.cookies.get("access_token")
     if not token:
-        raise HTTPException(status_code=401, detail="Access token is missing or invalid")
+        raise HTTPException(status_code=401, detail="Access token ไม่ถูกต้องหรือไม่มีในคำขอ")
 
+    # ตรวจสอบว่าโทเค็นนี้อยู่ใน blacklist หรือไม่
+    blacklisted_token = db["blacklist_token"].find_one({"token_key": token})
+    if blacklisted_token:
+        raise HTTPException(status_code=401, detail="โทเค็นนี้ได้ทำการล็อกเอาต์แล้ว")
+
+    # ตรวจสอบความถูกต้องของโทเค็น
     try:
-        payload = verify_access_token(token)
+        verify_access_token(token)
     except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+        raise HTTPException(status_code=401, detail=f"โทเค็นไม่ถูกต้อง: {str(e)}")
 
+    # เพิ่มโทเค็นลงใน blacklist
     blacklist_entry = {
         "token_key": token,
         "is_logout": True,
@@ -84,14 +91,16 @@ async def logout(response: Response, request: Request):
     }
     db["blacklist_token"].insert_one(blacklist_entry)
 
-    response.delete_cookie(key="access_token", httponly=True, samesite="None")
-    response.delete_cookie(key="refresh_token", httponly=True, samesite="None")
+    # ลบ Cookies
+    response.delete_cookie(key="access_token", httponly=True, samesite="Lax")
+    response.delete_cookie(key="refresh_token", httponly=True, samesite="Lax")
 
-    return {"message": "User has been logged out successfully"}
+    return {"message": "ผู้ใช้ได้ทำการล็อกเอาต์สำเร็จ"}
 
 @router.get("/status")
 async def get_status(request: Request):
     token = request.cookies.get("access_token")
+    print(token)
     if not token:
         return {"status": "logged_out", "message": "No access token found."}
 
